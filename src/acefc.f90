@@ -6441,11 +6441,10 @@ contains
    integer::i2s,ii,nrr,npp,jj,idis
    real(kr)::amass,e,f,xelas,cumm,amul,smul,sigcl,ratr,ratrl
    real(kr)::eht,amuu,pmu,ai,at,zt,zi,cc1,ee,cc2,wn,eta
-   real(kr)::sigc,signi,signow,h,en
+   real(kr)::sigc,signi,signow,h,en,aS
    real(kr),allocatable,dimension(:)::xxs,yys
    real(kr),parameter::emev=1.e6_kr
    real(kr),parameter::fm=1.e-12_kr
-
    !--allocate scratch storage area
    allocate(xxs(ne))
    allocate(yys(ne))
@@ -6509,6 +6508,8 @@ contains
                i2s=nint(2*spi)
                ai=awi*amassn
                at=awr*amassn
+
+               !- start of cpt process
                zt=nint(za/1000)
                zi=int(izai/1000)
                cc1=2*amu*ev*fm**2/hbar**2
@@ -6516,19 +6517,28 @@ contains
                cc2=ee**4*amu/(2*hbar**2*ev)
                wn=at*sqrt(cc1*e*ai)/(ai+at)
                eta=zt*zi*sqrt(cc2*ai/e)
+
+               !- compute screening parameter
+               call screenM(aS,e,ai,at,zi,zt)
+
+
+               !- compute sigc
                sigc=0
-               if (lidp.eq.0) sigc=(eta**2/wn**2)/(1-amuu)**2
+               if (lidp.eq.0) sigc=(eta**2/wn**2)/(1-amuu+aS)**2
                if (lidp.eq.1) sigc=((2*eta**2/wn**2)&
                  /(1-amuu**2))*((1+amuu**2)/(1-amuu**2)&
                  +((-1)**i2s)*cos(eta*log((1+amuu)/(1-amuu)))&
                  /(2*spi+1))
                if (ltp.lt.12) pmu=pmu-sigc
+               
+               !- compute signi
                if (iterp.eq.1) then
                   signi=(ratr-1)*sigc
                else
                   signi=pmu*xelas
                   if (signi.lt.-sigc) signi=-sigc
                endif
+
                ratr=(sigc+signi)/sigc
                itwo=1
                if (jl.gt.1.and.iterp.eq.0.and.sigc.gt.abs(signi)&
@@ -6539,6 +6549,7 @@ contains
                   itwo=0
                endif
             enddo
+
             if (jl.gt.1) cumm=cumm+(amuu-amul)*(signi+sigc+smul)/2
             write(nsyso,'(5x,1p,6e12.4)')&
               amuu,signi,sigc,sigc+signi,ratr,cumm
@@ -6559,6 +6570,7 @@ contains
             endif
          enddo
       enddo
+
       scr(llht+6+2*j)=e
       scr(llht+7+2*j)=2*amass*(e/emev)*eht*2*pi/(1+amass)**2
       if (izai.eq.nint(za)) scr(llht+7+2*j)=0
@@ -7875,16 +7887,16 @@ contains
    ! internals
    integer::ii,i,nn,idone,j,jj,k
    real(kr)::dy,dm,xm,yt,test,check,f,diff,ym,dco
-   integer,parameter::imax=20
+   integer,parameter::imax=10000
    real(kr)::x(imax),y(imax)
-   integer,parameter::maxang=4000
+   integer,parameter::maxang=100000
    real(kr)::aco(maxang),cprob(maxang)
    real(kr),parameter::tol1=.001e0_kr
    real(kr),parameter::tol2=.01e0_kr
    real(kr),parameter::one=1.e0_kr
    real(kr),parameter::half=.5e0_kr
    real(kr),parameter::hund=.01e0_kr
-   real(kr),parameter::umin=.96e0_kr
+   real(kr),parameter::umin=1.e0_kr
    real(kr),parameter::zero=0
 
    ! initialise
@@ -7936,7 +7948,7 @@ contains
       endif
    enddo
    nn=ii-1
-
+   
    !--now thin the distribution to a coarser tolerance
    i=1
    ii=1
@@ -7985,6 +7997,56 @@ contains
    return
    end subroutine ptlegc
 
+   subroutine screenM(aS,e,ai,at,zi,zt)
+   !-------------------------------------------------------------------
+   ! Compute the charged-particle screening parameter using the
+   ! Moilere formula
+   !-------------------------------------------------------------------
+   use physics
+   use mathm
+   ! externals
+   real(kr)::aS,e,ai,at,zi,zt
+   ! internals
+   real(kr)::imass,tmass,etot,m12,ecm,murel,momLab2,ptot,momCM,mom2
+   real(kr)::tkin,invB,aII,sRs,corr
+   real(kr),parameter::amuc=931.494013
+   real(kr),parameter::alpha2=5.3251344e-5
+   real(kr),parameter::a0=0.5771793887
+   real(kr),parameter::twopi=6.283185307
+   real(kr),parameter::mev=1e-6
+
+   !--compute screening parameter
+   imass = ai*amuc ! particle mass in MeV/cc
+   tmass = at*amuc ! target mass in MeV/c
+   etot = e*mev + imass ! total energy MeV
+   m12 = imass*imass ! relativistic reduced mass
+
+   ecm = sqrt(m12 + tmass**2 + 2.0*etot*tmass) ! energy in MeV
+   murel = imass*tmass/ecm
+   momLab2 = e*mev*(e*mev + 2.0*imass)
+   ptot = sqrt(momLab2)
+
+   momCM = ptot*tmass/ecm
+   mom2 = momCM*momCM
+   invB = 1.0 + murel*murel/mom2
+   tkin = momCM*sqrt(invB) - murel
+
+
+   if (zi.eq.1) then
+      aII = a0*zt**(1.0/3.0)
+   else
+      aII = a0*(zi**0.23 + zt**0.23)
+   endif
+   sRs = alpha2*aII**2
+
+   corr = 5.0*twopi*zt*sqrt(zi**2 * alpha2)
+   corr = exp(log(corr)*0.04)
+
+   aS = (sRs/mom2)*0.5*(1.13 + corr*3.76*zi**2 * zt**2 * invB * alpha2)
+
+   return
+   end subroutine screenM
+
    subroutine coul(x,y,c,awp,izap,awt,izat,spi)
    !-------------------------------------------------------------------
    ! Compute the charged-particle elastic scattering cross section
@@ -7998,13 +8060,14 @@ contains
    real(kr)::x,y,c(*),awp,awt,spi
    ! internals
    integer::ltp,lidp,i2s,nt,np,ip,it
-   real(kr)::e,ai,at,zt,zi,cc1,ee,cc2,eta,wn,sigc
+   real(kr)::e,ai,at,zt,zi,cc1,ee,cc2,eta,wn,sigc,aS
    real(kr)::sigr,sigi,sgn
    complex(kr)::carg1,carg2,cs1,cs2
    real(kr)::p(65)
    real(kr),parameter::fm=1.e-12_kr
    real(kr),parameter::zero=0
    real(kr),parameter::uno=1
+   real(kr),parameter::fudge=1e-6
 
    !--initialize constants
    e=c(2)
@@ -8021,10 +8084,16 @@ contains
    eta=zt*zi*sqrt(cc2*ai/e)
    wn=at*sqrt(cc1*ai*e)/(ai+at)
    sigc=0
-   if (lidp.eq.0) sigc=(eta**2/wn**2)/(1-x)**2
+
+   !--compute screening parameter
+   call screenM(aS,e,ai,at,zi,zt)
+
+   !--section 6.2.7 in endf manual Eq. 6.14
+   sigc = 0
+   if (lidp.eq.0) sigc=(eta**2/wn**2)/(1-x+aS)**2
    if (lidp.eq.1) sigc=((2*eta**2/wn**2)&
-     /(1-x**2))*((1+x**2)/(1-x**2)&
-     +((-1)**i2s)*cos(eta*log((1+x)/(1-x)))/(2*spi+1))
+     /(1-(x+fudge)**2))*((1+(x+fudge)**2)/(1-(x+fudge)**2)&
+     +((-1)**i2s)*cos(eta*log((1+x+fudge)/(1-x+fudge)))/(2*spi+1))
    nt=nint(c(6))
    np=2*nt
    call legndr(x,p,np)
@@ -8041,8 +8110,8 @@ contains
             cs1=cs1+(2*it+1)*p(it+1)&
               *dcmplx(c(8+np+2*it),c(9+np+2*it))/2
          enddo
-         carg1=dcmplx(zero,uno)*eta*log((1-x)/2)
-         sigi=(-2*eta/(1-x))*dble(cs1*exp(carg1))
+         carg1=dcmplx(zero,uno)*eta*log((1-x+aS)/2)
+         sigi=(-2*eta/(1-(x+aS)**2))*dble(cs1*exp(carg1))
          y=sigc+sigr+sigi
       else
          sigr=c(7)/2
@@ -8059,9 +8128,9 @@ contains
               *dcmplx(c(8+nt+2*it),c(9+nt+2*it))/2
             sgn=-sgn
          enddo
-         carg1=dcmplx(zero,uno)*eta*log((1-x)/2)
-         carg2=dcmplx(zero,uno)*eta*log((1+x)/2)
-         sigi=(-2*eta/(1-x*x))*dble(cs1*(1+x)*exp(carg1)&
+         carg1=dcmplx(zero,uno)*eta*log((1-x+fudge)/2)
+         carg2=dcmplx(zero,uno)*eta*log((1+x+fudge)/2)
+         sigi=(-2*eta/(1-x*x+aS))*dble(cs1*(1+x)*exp(carg1)&
            +cs2*(1-x)*exp(carg2))
          y=sigc+sigr+sigi
       endif
@@ -8082,6 +8151,8 @@ contains
          y=sigc+sigr
       endif
    endif
+   !-print*, e, x, sigc, sigr, sigi
+
    return
    end subroutine coul
 
