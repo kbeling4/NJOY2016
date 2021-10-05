@@ -254,6 +254,10 @@ contains
    integer::mcnpx
    integer::i,nch
    real(kr)::z(3)
+   integer::screen_model=0
+   integer::coulomb_only=0   
+   real(kr)::umin=.96_kr
+   real(kr)::screen_param=.0_kr
    real(kr),parameter::eps=1.e-5_kr
    real(kr),parameter::zero=0
    real(kr),parameter::one=1
@@ -311,7 +315,7 @@ contains
       iopp=1
       newfor=1
       ismooth=1
-      read(nsysi,*) newfor,iopp,ismooth
+      read(nsysi,*) umin,screen_model,screen_param,coulomb_only,newfor,iopp,ismooth
       write(nsyso,'(&
         &'' new formats .......................... '',i10/&
         &'' photon option ........................ '',i10/&
@@ -437,7 +441,7 @@ contains
    !--prepare fast ace data
    if (iopt.eq.1) then
       call acetop(nendf,npend,ngend,nace,ndir,iprint,itype,mcnpx,suff,&
-        hk,izn,awn,matd,tempd,newfor,iopp,ismooth,thin)
+        hk,izn,awn,matd,tempd,newfor,iopp,ismooth,thin,umin,screen_model,screen_param,coulomb_only)
 
    !--prepare thermal ace data
    else if (iopt.eq.2) then

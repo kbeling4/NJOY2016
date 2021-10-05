@@ -88,7 +88,8 @@ module acefc
 contains
 
    subroutine acetop(nendf,npend,ngend,nace,ndir,iprint,itype,mcnpx,&
-     suff,hk,izn,awn,matd,tempd,newfor,iopp,ismooth,thin)
+        suff,hk,izn,awn,matd,tempd,newfor,iopp,ismooth,thin,umin,&
+        screen_model,screen_param,coulomb_only)
    !--------------------------------------------------------------------
    ! Prepare an ACE fast continuous file.
    !--------------------------------------------------------------------
@@ -97,6 +98,7 @@ contains
    use endf   ! provides endf routines and variables
    ! externals
    integer::nendf,npend,ngend,nace,ndir,iprint,itype,matd,newfor,iopp,ismooth,i
+   integer::screen_model,coulomb_only
    integer::mcnpx
    real(kr)::suff
    character(70)::hk
@@ -104,6 +106,7 @@ contains
    real(kr)::awn(16)
    real(kr)::tempd
    real(kr)::thin(4)
+   real(kr)::umin, screen_param   
    ! internals
    integer::nb,nw,nethr,nedis,itab,nscr2
    real(kr)::b(17)
@@ -208,7 +211,7 @@ contains
    call atend(mscr,0)
 
    !--load ace data into memory.
-   call acelod(mscr,suff,matd,tempd,newfor,mcnpx,ismooth)
+   call acelod(mscr,suff,matd,tempd,newfor,mcnpx,ismooth,umin,screen_model,screen_param,coulomb_only)
 
    !--print ace file.
    if (iprint.gt.0) call aceprt(hk)
@@ -4866,7 +4869,7 @@ contains
    return
    end subroutine gamout
 
-   subroutine acelod(nin,suff,matd,tempd,newfor,mcnpx,ismooth)
+   subroutine acelod(nin,suff,matd,tempd,newfor,mcnpx,ismooth,umin,screen_model,screen_param,coulomb_only)
    !-------------------------------------------------------------------
    ! Load data in ace format from the input file.
    !-------------------------------------------------------------------
@@ -4875,8 +4878,8 @@ contains
    use util ! repoz,dater,error,skiprz,sigfig
    use endf ! provides endf routines and variables
    ! externals
-   integer::nin,matd,newfor,mcnpx,ismooth
-   real(kr)::suff,tempd
+   integer::nin,matd,newfor,mcnpx,ismooth,screen_model,coulomb_only
+   real(kr)::suff,tempd,umin,screen_param
    ! internals
    integer::nwscr,nnu,nnup,kfis,mtnr,mtntr,i,nnud,nnf
    integer::nurd,idone,mta,nb,nw,lnu,n,m,jnt,j
@@ -5846,7 +5849,7 @@ contains
                !--treat charged-particle elastic
                else
                   call acecpe(next,scr,nin,awr,awp,&
-                    spi,ne,lidp,ie,il,nes)
+                    spi,ne,lidp,ie,il,nes,umin,screen_model,screen_param,coulomb_only)
                endif
             endif
          endif
@@ -6425,7 +6428,7 @@ contains
    return
    end subroutine acensd
 
-   subroutine acecpe(next,scr,nin,awr,awp,spi,ne,lidp,ie,il,nes)
+   subroutine acecpe(next,scr,nin,awr,awp,spi,ne,lidp,ie,il,nes,umin,screen_model,screen_param,coulomb_only)
    !-------------------------------------------------------------------
    ! Process this charged-particle elastic distribution.
    !-------------------------------------------------------------------
@@ -6434,8 +6437,8 @@ contains
    use physics ! provides amassn,amu,hbar,pi,ev,clight
    use util ! provides sigfig
    ! externals
-   integer::next,nin,ne,lidp,ie,il,nes
-   real(kr)::scr(*),awr,awp,spi
+   integer::next,nin,ne,lidp,ie,il,nes,screen_model,coulomb_only
+   real(kr)::scr(*),awr,awp,spi,umin,screen_param
    ! internals
    integer::llht,lld,j,ll,nb,nw,ltp,nl,ien,kk,iterp,jl,ione,itwo
    integer::i2s,ii,nrr,npp,jj,idis
@@ -6474,7 +6477,7 @@ contains
       scr(lld+3)=lidp
       nl=nint(scr(lld+5))
       if (ltp.lt.12) then
-         call ptlegc(scr(lld),awi,izai,awr,nint(za),spi)
+         call ptlegc(scr(lld),awi,izai,awr,nint(za),spi,umin,screen_model,screen_param,coulomb_only)
          nl=nint(scr(lld+5))
          ll=lld+6+2*nl
       endif
@@ -7874,7 +7877,7 @@ contains
    return
    end subroutine skip6a
 
-   subroutine ptlegc(c,awp,izai,awt,iza,spi)
+   subroutine ptlegc(c,awp,izai,awt,iza,spi,umin,screen_model,screen_param,coulomb_only)
    !-------------------------------------------------------------------
    ! For charged particle Legendre coefficient representations,
    ! reconstruct the angular distribution adaptively.  The
@@ -7882,8 +7885,9 @@ contains
    !-------------------------------------------------------------------
    use util ! provides error
    ! externals
-   integer::izai,iza
+   integer::izai,iza,screen_model,coulomb_only
    real(kr)::c(*),awp,awt,spi
+   real(kr)::umin, screen_param
    ! internals
    integer::ii,i,nn,idone,j,jj,k
    real(kr)::dy,dm,xm,yt,test,check,f,diff,ym,dco
@@ -7896,7 +7900,6 @@ contains
    real(kr),parameter::one=1.e0_kr
    real(kr),parameter::half=.5e0_kr
    real(kr),parameter::hund=.01e0_kr
-   real(kr),parameter::umin=1.e0_kr
    real(kr),parameter::zero=0
 
    ! initialise
